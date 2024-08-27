@@ -1,0 +1,100 @@
+milestone: # empty path for not init
+# milestone: ./output/Celeba128_ipc_g128_d6/model_inner_test.pt
+model_comment: 'Celeba128_ipc_g128_d6'
+
+# model constant
+image_shape: &image_shape 128
+hypo_hiddim: &hidden_dim 512
+hypo_depth: &hypo_depth 6
+# training para
+train_num_steps: 200000
+save_every: 1000
+batch_size: 6
+gradient_accumulate_every: 3
+coord_noise: True
+opt_type: "adam" # adam, rmsprop
+loss_type: &loss_type l2 # l1 or l2
+train_lr: 0.00005
+# image target
+train_target: &train_target image
+
+hyper_network: &hyper_network [
+  "HyperNetwork",
+  {
+    n_groups: 128,
+    direct_wtoken: False, # weight grouping setting
+    grouping_mode: "mlp_mod", # "mlp" "mlp_mod"
+    tokenizer: {
+      name: "ImgTokenizer",
+      args: {
+        input_size: *image_shape,
+        patch_size: 10,
+        padding: 1,
+        dim: *hidden_dim, # <= pe_dim* in_dim
+      }
+    },
+    hyponet: {
+      name: &hyponet_name "HypoMlpIPC",
+      args: &hpnet_params {
+        in_dim: 2,
+        out_dim: 3,
+        out_bias: 0,
+        depth: *hypo_depth,
+        hidden_dim: *hidden_dim,
+        use_pe: true,
+        pe_dim: 256,
+        pe_sigma: 1024,
+        modulated_layer_id: 1, # second layer
+      }
+    },
+    tinr_enc: {
+      name: "TInrEncoder",
+      args: {
+        shortcut_every: 0,
+        dim: *hidden_dim,
+        depth: &enc_depth 6,
+        n_head: 6,
+        head_dim: 64,
+        ff_dim: 3072,
+        dropout: 0.,
+      }
+    },
+    tinr_dec: {
+      name: "TInrDecoder",
+      args: {
+        dim: *hidden_dim,
+        depth: 6,
+        n_head: 6,
+        head_dim: 64,
+        ff_dim: 3072,
+        dropout: 0.,
+      }
+    },
+  }
+]
+
+model_framework: {
+  frame_work: "NormalINR",
+  inner_model: *hyper_network,
+  outer_model: [
+    "ModelMangager",
+    {
+      image_shape: *image_shape,
+      loss_type: *loss_type,
+      target: *train_target,
+    }
+  ]
+}
+
+dataset_kwargs: [
+  "ImageSetDataset",
+  {
+    imageset_kwargs: {
+      root_path: "/data1/open_datasets/celeba/img_align_celeba/img_align_celeba",
+      split: "train",
+    },
+    convert_image_to: , # None
+    augment_horizontal_flip: False,
+    resize: *image_shape,
+  }
+]

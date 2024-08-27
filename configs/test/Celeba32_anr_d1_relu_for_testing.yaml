@@ -1,0 +1,103 @@
+milestone: # empty path for not init
+# milestone: ./output/Celeba32_anr_d1_relu_for_testing/model_inner_test.pt
+model_comment: 'Celeba32_anr_d1_relu_for_testing'
+
+# model constant
+image_shape: &image_shape 32
+hypo_hiddim: &hidden_dim 128
+hypo_depth: &hypo_depth 1
+# training para
+train_num_steps: 10000
+save_every: 1000
+batch_size: 1
+gradient_accumulate_every: 1
+coord_noise: True
+opt_type: "adam" # adam, rmsprop
+loss_type: &loss_type l2 # l1 or l2
+train_lr: 0.00005
+# image target
+train_target: &train_target image
+
+hyper_network: &hyper_network [
+  "HyperNetwork",
+  {
+    n_groups: 128,
+    direct_wtoken: True, # weight grouping setting
+    tokenizer: {
+      name: "ImgTokenizer",
+      args: {
+        input_size: *image_shape,
+        patch_size: 8,
+        padding: 1,
+        dim: *hidden_dim, # <= pe_dim* in_dim
+      }
+    },
+    hyponet: {
+      name: &hyponet_name "ANR",
+      args: &hpnet_params {
+        in_dim: 2,
+        out_dim: 3,
+        out_bias: 0,
+        depth: *hypo_depth,
+        hidden_dim: *hidden_dim,
+        token_len: 128,
+        # PE
+        use_pe: true,
+        pe_dim: 64,
+        pe_sigma: 1024,
+        # tunning para
+        att_threshold: 0.0015, # token len *= 4, thres /= 4
+        activation: "relu",
+      }
+    },
+    tinr_enc: {
+      name: "TInrEncoder",
+      args: {
+        shortcut_every: 0,
+        dim: *hidden_dim,
+        depth: &enc_depth 6,
+        n_head: 6,
+        head_dim: 64,
+        ff_dim: 3072,
+        dropout: 0.,
+      }
+    },
+    tinr_dec: {
+      name: "TInrDecoder",
+      args: {
+        dim: *hidden_dim,
+        depth: 6,
+        n_head: 6,
+        head_dim: 64,
+        ff_dim: 3072,
+        dropout: 0.,
+      }
+    },
+  }
+]
+
+model_framework: {
+  frame_work: "NormalINR",
+  inner_model: *hyper_network,
+  outer_model: [
+    "ModelMangager",
+    {
+      image_shape: *image_shape,
+      loss_type: *loss_type,
+      target: *train_target,
+    }
+  ]
+}
+
+dataset_kwargs: [
+  "ImageSetDataset",
+  {
+    imageset_kwargs: {
+      root_path: "/data1/open_datasets/celeba/img_align_celeba/img_align_celeba",
+      split: "train",
+    },
+    convert_image_to: , # None
+    augment_horizontal_flip: False,
+    resize: *image_shape,
+  }
+]

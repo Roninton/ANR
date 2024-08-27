@@ -1,0 +1,108 @@
+milestone: # empty path for not init
+# milestone: ./output/ShapenetCar128_anr_d1_for_testing/model_inner_test.pt
+model_comment: 'ShapenetCar128_anr_d1_for_testing'
+
+# constant
+image_shape: &image_shape 128
+hypo_hiddim: &hidden_dim 128
+hypo_depth: &hypo_depth 5
+# training para
+train_num_steps: 10000
+save_every: 100
+## NOTE: THE SIZE OF "batch_size * gradient_accumulate_every" 
+##       must be large enough for nerf training, recommend > 20
+batch_size: 3
+gradient_accumulate_every: 6
+coord_noise: True
+opt_type: "adam" # adam, rmsprop
+loss_type: &loss_type l2 # l1 or l2
+train_lr: 0.00005
+# nerf target
+train_target: &train_target nerf
+train_n_rays: 128 # 128
+
+
+hyper_network: &hyper_network [
+  "HyperNetwork",
+  {
+    n_groups: 128,
+    direct_wtoken: True, # weight grouping setting
+    tokenizer: {
+      name: "nvs_tokenizer",
+      args: {
+        input_size: *image_shape,
+        patch_size: 8, # 9,4
+        dim: *hidden_dim,
+      }
+    },
+    hyponet: {
+      name: &hyponet_name "ANR",
+      args: &hpnet_params {
+        in_dim: 3,
+        out_dim: 4,
+        out_bias: 0,
+        adaptive_idim: True,
+        depth: *hypo_depth,
+        hidden_dim: *hidden_dim,
+        token_len: 128,
+        # PE
+        use_pe: true,
+        pe_dim: 128, # 128 work well for imgsize==64; larger pe_dim for larger image
+        pe_sigma: 512, # 1024, about e*log(image_size) is enough
+        # tunning para
+        att_threshold: 0.003, # token len *= 4, thres /= 4
+        activation: "relu",
+      }
+    },
+    tinr_enc: {
+      name: "TInrEncoder",
+      args: {
+        shortcut_every: 0,
+        dim: *hidden_dim,
+        depth: &enc_depth 6,
+        n_head: 6,
+        head_dim: 64,
+        ff_dim: 3072,
+        dropout: 0.,
+      }
+    },
+    tinr_dec: {
+      name: "TInrDecoder",
+      args: {
+        dim: *hidden_dim,
+        depth: 6,
+        n_head: 6,
+        head_dim: 64,
+        ff_dim: 3072,
+        dropout: 0.,
+      }
+    },
+  }
+]
+
+
+model_framework: {
+  frame_work: "NormalINR",
+  inner_model: *hyper_network,
+  outer_model: [
+    "ModelMangager",
+    {
+      image_shape: *image_shape,
+      loss_type: *loss_type,
+      target: *train_target,
+    }
+  ]
+}
+
+dataset_kwargs: [
+  "learnit_shapenet",
+  {
+    root_path: '/data1/open_datasets/learnit_shapenet/',
+    category: 'cars',
+    split: 'train',
+    views_rng: [0, 25],
+    n_support: 3,
+    n_query: 1,
+    repeat: 2,
+  }
+]
